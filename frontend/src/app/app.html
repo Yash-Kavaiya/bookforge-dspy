@@ -1,0 +1,46 @@
+<header class="topbar">
+  <a class="brand" routerLink="/">
+    <span class="mark" aria-hidden="true"></span>
+    <div>
+      <h1>BookForge</h1>
+      <p class="tagline">Recorded talks into a verified textbook</p>
+    </div>
+  </a>
+
+  <div class="topbar-right">
+    @if (health.health(); as h) {
+      <div class="capabilities" aria-live="polite">
+        <span class="cap" [class.ok]="h.ready" [class.missing]="!h.ready">
+          {{ h.ready ? 'LLM ready' : 'no LLM key' }}
+        </span>
+        <span class="cap" [class.ok]="h.tools.pdflatex" [class.missing]="!h.tools.pdflatex">pdflatex</span>
+        <span class="cap" [class.ok]="h.tools.ffmpeg" [class.missing]="!h.tools.ffmpeg">ffmpeg</span>
+      </div>
+    }
+
+    <nav class="nav-links">
+      <a class="nav-link" routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Build</a>
+      <a class="nav-link" routerLink="/config" routerLinkActive="active">Config</a>
+    </nav>
+
+    <button class="icon-btn" type="button" title="Toggle colour scheme" aria-label="Toggle colour scheme"
+            (click)="theme.toggle()">
+      {{ theme.mode() === 'dark' ? '☾' : '◐' }}
+    </button>
+  </div>
+</header>
+
+@if (health.health()?.warnings?.length) {
+  <div class="banner">
+    <strong>Before you build</strong>
+    <ul>
+      @for (warning of health.health()!.warnings; track warning) {
+        <li>{{ warning }}</li>
+      }
+    </ul>
+  </div>
+} @else if (health.error()) {
+  <div class="banner">Cannot reach the BookForge server: {{ health.error() }}</div>
+}
+
+<router-outlet />

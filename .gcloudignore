@@ -1,0 +1,50 @@
+# What NOT to upload to Cloud Build when deploying with `gcloud run deploy
+# --source .`. Without this file everything in the directory is zipped and
+# uploaded, including gigabytes of generated books (data/), the local Python
+# venv, and frontend/node_modules — none of which the Dockerfile needs (it
+# does its own `pip install` / `npm install` inside the build).
+
+# Secrets — never uploaded; deployed via `--set-secrets` instead.
+.env
+*.pem
+*.key
+
+# Pipeline output — books are regenerated, not shipped in the build context.
+data/
+mlruns/
+mlartifacts/
+artifacts/*.json
+
+# Python — anchored to the repo root: a bare "build/" would also match
+# frontend/src/app/features/build/ (the Angular build feature), silently
+# dropping it from the upload.
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.venv/
+venv/
+.eggs/
+
+# Frontend — Docker's webapp build stage runs its own npm install/build.
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+bookforge/api/webapp/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.tox/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

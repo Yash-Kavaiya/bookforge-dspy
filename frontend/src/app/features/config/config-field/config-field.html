@@ -1,0 +1,49 @@
+@switch (field().type) {
+  @case ('checkbox') {
+    <label class="check">
+      <input type="checkbox" [checked]="asBool()" (change)="onCheckbox($event)">
+      <span>{{ field().label }}
+        @if (field().hint) { <em>&mdash; {{ field().hint }}</em> }
+      </span>
+    </label>
+  }
+  @case ('select') {
+    <label class="field">
+      <span>{{ field().label }}
+        @if (field().hint) { <em>&mdash; {{ field().hint }}</em> }
+      </span>
+      <select [value]="asString()" (change)="onText($event)">
+        @for (opt of field().options; track opt) {
+          <option [value]="opt">{{ opt }}</option>
+        }
+      </select>
+    </label>
+  }
+  @case ('password') {
+    <label class="field">
+      <span>{{ field().label }}
+        @if (field().hint) { <em>&mdash; {{ field().hint }}</em> }
+      </span>
+      <input type="password" autocomplete="off" spellcheck="false"
+             [placeholder]="passwordPlaceholder()" (input)="onText($event)">
+    </label>
+  }
+  @case ('number') {
+    <label class="field">
+      <span>{{ field().label }}
+        @if (field().hint) { <em>&mdash; {{ field().hint }}</em> }
+      </span>
+      <input type="number" [value]="asString()"
+             [attr.min]="field().min ?? null" [attr.max]="field().max ?? null"
+             [attr.step]="field().step ?? 'any'" (input)="onNumber($event)">
+    </label>
+  }
+  @default {
+    <label class="field">
+      <span>{{ field().label }}
+        @if (field().hint) { <em>&mdash; {{ field().hint }}</em> }
+      </span>
+      <input type="text" spellcheck="false" [value]="asString()" (input)="onText($event)">
+    </label>
+  }
+}

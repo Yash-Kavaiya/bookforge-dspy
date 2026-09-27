@@ -1,0 +1,56 @@
+# Secrets
+.env
+*.pem
+*.key
+
+# Pipeline output — books are regenerated, not committed
+data/
+mlruns/
+mlartifacts/
+
+# Optimized programs are environment-specific; commit deliberately if you want
+# them versioned (they are small JSON files and often worth keeping).
+artifacts/*.json
+!artifacts/.gitkeep
+
+# Angular UI (frontend/) — install with `npm install`, build with `npm run
+# build`; output lands here (frontend/angular.json's outputPath) and is not
+# committed, same as any other compiled artifact.
+bookforge/api/webapp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.eggs/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.tox/
+
+# LaTeX build noise
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
