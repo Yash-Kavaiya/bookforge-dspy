@@ -228,7 +228,7 @@ def _extract_scene_samples(
             round((i + 1) * duration / (len(frames) + 1), 2)
             for i in range(len(frames))
         ]
-    return list(zip(times[: len(frames)], frames))
+    return list(zip(times[: len(frames)], frames, strict=False))
 
 
 def _probe_duration(video_path: Path) -> float:
@@ -456,7 +456,7 @@ def curate_frames(
 
 def format_video_timestamp(seconds: float) -> str:
     """HH:MM:SS for figure provenance footnotes."""
-    total = max(0, int(round(seconds)))
+    total = max(0, round(seconds))
     h, rem = divmod(total, 3600)
     m, s = divmod(rem, 60)
     if h:

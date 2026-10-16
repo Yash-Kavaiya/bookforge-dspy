@@ -1,0 +1,12 @@
+<button type="button" class="chapter" [attr.data-status]="chapter().status || 'pending'" (click)="select.emit(chapter())">
+  <div class="chapter-top">
+    <span class="num">CH {{ chapterNumber() }}</span>
+    <span class="num">{{ chapter().status || 'pending' }}</span>
+  </div>
+  <div class="title" [title]="chapter().title">{{ chapter().title }}</div>
+  <div class="bar"><i [style.width.%]="scorePercent()"></i></div>
+  <div class="foot">
+    <span>quality {{ score() ? score().toFixed(2) : '—' }}</span>
+    <span>{{ chapter().compiled ? 'compiled' : '' }}</span>
+  </div>
+</button>

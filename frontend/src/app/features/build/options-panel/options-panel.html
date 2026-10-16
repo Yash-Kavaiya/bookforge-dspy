@@ -1,0 +1,56 @@
+<section class="panel" id="panel-options">
+  <h2>2&nbsp;&nbsp;Book</h2>
+
+  <label class="field">
+    <span>Title <em>(optional — taken from the source otherwise)</em></span>
+    <input type="text" [value]="form.bookTitle()" (input)="onTitleChange($event)"
+           [placeholder]="form.preview()?.title ?? 'Decoding AI'">
+  </label>
+
+  <fieldset class="themes">
+    <legend>Design</legend>
+    @for (theme of themes; track theme.value) {
+      <label class="theme-option">
+        <input type="radio" name="theme" [value]="theme.value" [checked]="form.theme() === theme.value"
+               (change)="onThemeChange(theme.value)">
+        <span class="theme-card">
+          <strong>{{ theme.title }}</strong>
+          <small>{{ theme.hint }}</small>
+        </span>
+      </label>
+    }
+  </fieldset>
+
+  <div class="grid-2">
+    <label class="field">
+      <span>Max chapters</span>
+      <input type="number" min="1" placeholder="all"
+             [value]="form.maxVideos() ?? ''" (input)="onMaxVideosChange($event)">
+    </label>
+    <label class="field">
+      <span>QA iterations</span>
+      <input type="number" min="1" max="8" placeholder="3"
+             [value]="form.qaIterations() ?? ''" (input)="onQaIterationsChange($event)">
+    </label>
+  </div>
+
+  <label class="check">
+    <input type="checkbox" [checked]="form.compileLatex()" [disabled]="pdflatexMissing()" (change)="onCompileLatexChange($event)">
+    <span>Compile with pdflatex
+      @if (pdflatexMissing()) {
+        <em>— pdflatex is not installed on the server, so no PDF can be produced and chapters cannot be verified by compilation.</em>
+      } @else {
+        <em>— off produces chapters but no PDF, and nothing is verified by execution</em>
+      }
+    </span>
+  </label>
+
+  <button type="button" class="btn primary" [disabled]="!form.canBuild() || starting()" (click)="startBuild()">
+    {{ starting() ? 'Starting…' : 'Build the book' }}
+  </button>
+  @if (startError()) {
+    <p class="hint" style="color: var(--danger)">{{ startError() }}</p>
+  } @else {
+    <p class="hint">{{ buildHint() }}</p>
+  }
+</section>

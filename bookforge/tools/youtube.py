@@ -12,12 +12,14 @@ the moment a claim came from.
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import subprocess
 from pathlib import Path
 
 from yt_dlp import YoutubeDL
+from yt_dlp.cookies import CookieLoadError, extract_cookies_from_browser
 
 from bookforge.schemas import TranscriptSegment
 
@@ -49,11 +51,32 @@ def auth_options(
             options["cookiefile"] = str(path)
         else:
             logger.warning("cookies file %s does not exist; ignoring", path)
-    if cookies_from_browser:
+    if cookies_from_browser and browser_cookies_readable(cookies_from_browser):
         options["cookiesfrombrowser"] = (cookies_from_browser,)
     if proxy:
         options["proxy"] = proxy
     return options
+
+
+@functools.cache
+def browser_cookies_readable(browser: str) -> bool:
+    """Can yt-dlp actually load this browser's cookies? Probed once per process.
+
+    Unreadable browser cookies are dropped rather than fatal: every yt-dlp call
+    would otherwise fail on them, while from a residential IP the same request
+    succeeds with no cookies at all. Chrome 127+ on Windows is never readable
+    (app-bound encryption), and any Chromium browser is locked while open.
+    """
+    try:
+        extract_cookies_from_browser(browser)
+    except Exception as exc:
+        logger.warning(
+            "ignoring BOOKFORGE_YOUTUBE_COOKIES_FROM_BROWSER=%s and continuing "
+            "without cookies: %s (original error: %s)",
+            browser, COOKIE_LOAD_HELP, exc,
+        )
+        return False
+    return True
 
 
 def is_bot_block(error: BaseException | str) -> bool:
@@ -68,6 +91,22 @@ BOT_BLOCK_HELP = (
     "set BOOKFORGE_YOUTUBE_COOKIES_FILE, or set "
     "BOOKFORGE_YOUTUBE_COOKIES_FROM_BROWSER=chrome on a desktop. Local video "
     "files and transcript folders are unaffected."
+)
+
+#: yt-dlp raises this when it cannot read the configured browser's cookie
+#: store — on Windows this is almost always the browser being open, which
+#: locks the cookie database (https://github.com/yt-dlp/yt-dlp/issues/7271).
+#: Without this, the real cause was swallowed into a generic "check the URL"
+#: message that sent people looking in exactly the wrong place.
+COOKIE_LOAD_HELP = (
+    "Could not read cookies from the configured browser "
+    "(BOOKFORGE_YOUTUBE_COOKIES_FROM_BROWSER). On Windows this usually means "
+    "the browser is currently running and has locked its cookie database — "
+    "close it and retry, point at a different installed browser, or export "
+    "a cookies.txt file instead and set BOOKFORGE_YOUTUBE_COOKIES_FILE. "
+    "Cookies are only needed to get past YouTube's bot check from a "
+    "datacentre IP; running locally, you can often just clear "
+    "BOOKFORGE_YOUTUBE_COOKIES_FROM_BROWSER and skip them entirely."
 )
 
 
@@ -115,6 +154,11 @@ def list_channel_videos(
                 info = ydl.extract_info(candidate, download=False)
                 if info:
                     break
+            except CookieLoadError as exc:
+                # Cookie loading fails identically for every candidate URL —
+                # retrying the second one would just print the same error
+                # again and mask it behind the generic message below.
+                raise RuntimeError(f"{COOKIE_LOAD_HELP} (original error: {exc})") from exc
             except Exception as exc:
                 logger.debug("extraction failed for %s: %s", candidate, exc)
 
@@ -211,6 +255,8 @@ def download_video(
     try:
         with YoutubeDL(options) as ydl:
             ydl.download([url])
+    except CookieLoadError as exc:
+        raise RuntimeError(f"{COOKIE_LOAD_HELP} (original error: {exc})") from exc
     except Exception as exc:
         if is_bot_block(exc):
             raise RuntimeError(f"{BOT_BLOCK_HELP} (original error: {exc})") from exc
@@ -289,6 +335,15 @@ def fetch_captions(
     try:
         with YoutubeDL(options) as ydl:
             ydl.download([url])
+    except CookieLoadError:
+        # Not fatal here — falling through to Whisper still produces a
+        # transcript — but silently eating this wastes minutes of Whisper
+        # transcription for a problem that is usually a one-line env fix.
+        logger.warning(
+            "caption fetch skipped for %s: %s Falling back to Whisper.",
+            url, COOKIE_LOAD_HELP,
+        )
+        return None
     except Exception as exc:
         if is_bot_block(exc):
             logger.warning("caption fetch blocked for %s. %s", url, BOT_BLOCK_HELP)

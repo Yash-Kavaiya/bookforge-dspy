@@ -22,7 +22,7 @@ The difference is not cosmetic:
 from __future__ import annotations
 
 import dspy
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from bookforge.schemas import (
     ChapterAnalysis,
@@ -32,6 +32,7 @@ from bookforge.schemas import (
     GlossaryItem,
     MathDerivation,
     TableSpec,
+    trim_lists,
 )
 
 # ---------------------------------------------------------------------------
@@ -50,6 +51,16 @@ class ChunkAnalysis(BaseModel):
     glossary: list[GlossaryItem] = Field(default_factory=list, max_length=12)
     #: A one-line summary of what this window covered, used by the merge step.
     segment_summary: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _trim_surplus(cls, data: object) -> object:
+        return trim_lists(
+            data,
+            {"concepts": 6, "tables": 3, "charts": 3, "diagrams": 2,
+             "derivations": 4, "glossary": 12},
+            "ChunkAnalysis",
+        )
 
 
 class FrameCaption(BaseModel):
@@ -87,7 +98,7 @@ class SemanticCritique(BaseModel):
 
 
 class AnalyzeTranscriptChunk(dspy.Signature):
-    """Extract textbook-grade structure from one window of a lecture transcript.
+    r"""Extract textbook-grade structure from one window of a lecture transcript.
 
     You are reading a contiguous window of a longer talk, so cover THIS window
     only; another pass handles the rest and a merge step reconciles them.

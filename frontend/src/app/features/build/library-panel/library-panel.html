@@ -1,0 +1,31 @@
+<section class="panel wide" id="panel-library">
+  <div class="panel-head">
+    <h2>Library</h2>
+    <button type="button" class="btn secondary small" (click)="refresh()">Refresh</button>
+  </div>
+
+  @if (!workspaces.workspaces().length) {
+    <p class="empty-state">No books yet. Build one above.</p>
+  } @else {
+    <div class="workspaces">
+      @for (ws of workspaces.workspaces(); track ws.slug) {
+        <div class="ws">
+          <h3>{{ ws.title || ws.slug }}</h3>
+          <p class="sub" [title]="ws.source">{{ ws.source || ws.slug }}</p>
+          <div class="row">
+            <span><b>{{ ws.chapters }}</b> chapters</span>
+            <span><b>{{ ws.verified }}</b> verified</span>
+          </div>
+          <div class="actions">
+            @if (ws.has_pdf) {
+              <a class="btn primary" [href]="bookUrl(ws)" target="_blank" rel="noopener">Open PDF</a>
+            } @else {
+              <span class="empty-state">no PDF yet</span>
+            }
+            <button type="button" class="btn secondary" (click)="inspect(ws)">Chapters</button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</section>

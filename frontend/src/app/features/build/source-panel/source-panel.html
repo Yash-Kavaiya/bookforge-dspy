@@ -1,0 +1,103 @@
+<section class="panel" id="panel-source">
+  <h2>1&nbsp;&nbsp;Source</h2>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab" [class.active]="form.activeTab() === 'upload'" (click)="setTab('upload')">Upload files</button>
+    <button type="button" class="tab" [class.active]="form.activeTab() === 'folder'" (click)="setTab('folder')">Server folder</button>
+    <button type="button" class="tab" [class.active]="form.activeTab() === 'youtube'" (click)="setTab('youtube')">YouTube</button>
+  </div>
+
+  @if (form.activeTab() === 'upload') {
+    <div class="tabpanel active">
+      <div class="dropzone" [class.over]="dragOver()" tabindex="0" role="button"
+           aria-label="Choose or drop video and transcript files"
+           (click)="openFileBrowser()" (keydown.enter)="openFileBrowser()" (keydown.space)="openFileBrowser()"
+           (drop)="onDrop($event)" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)">
+        <div class="dz-icon" aria-hidden="true">⬆</div>
+        <p class="dz-title">Drop videos or transcripts here</p>
+        <p class="dz-hint">or click to choose files — {{ acceptedFormats() }}</p>
+        <input #fileInput type="file" multiple hidden (change)="onFileInputChange($event)">
+      </div>
+
+      <ul class="file-list">
+        @for (staged of form.stagedFiles(); track staged.file.name + staged.file.size; let i = $index) {
+          <li>
+            <span class="name">{{ staged.file.name }}</span>
+            <span class="size">
+              {{ fmtBytes(staged.file.size) }}
+              <button type="button" class="icon-btn" style="padding:0 5px;margin-left:6px"
+                      [attr.aria-label]="'Remove ' + staged.file.name" (click)="removeFile(i)">✕</button>
+            </span>
+          </li>
+        }
+      </ul>
+
+      @if (uploadError()) {
+        <p class="hint" style="color: var(--danger)">{{ uploadError() }}</p>
+      }
+
+      <button type="button" class="btn secondary" [disabled]="form.stagedFiles().length === 0 || form.uploading()" (click)="upload()">
+        @if (form.uploading()) {
+          Uploading…
+        } @else if (form.stagedFiles().length) {
+          Upload {{ form.stagedFiles().length }} file(s) — {{ fmtBytes(form.totalStagedBytes()) }}
+        } @else {
+          Upload to server
+        }
+      </button>
+    </div>
+  }
+
+  @if (form.activeTab() === 'folder') {
+    <div class="tabpanel active">
+      <label class="field">
+        <span>Folder or file path on the server</span>
+        <input type="text" [value]="form.folderPath()" (input)="onFolderPathChange($event)"
+               placeholder="/data/talks/decoding-ai" spellcheck="false">
+      </label>
+      <p class="hint">
+        A folder is scanned for videos and transcripts. A transcript sitting beside a video of
+        the same name is used as that video's transcript rather than becoming a chapter of its own.
+      </p>
+    </div>
+  }
+
+  @if (form.activeTab() === 'youtube') {
+    <div class="tabpanel active">
+      <label class="field">
+        <span>Channel, playlist or video URL</span>
+        <input type="text" [value]="form.youtubeUrl()" (input)="onYoutubeUrlChange($event)"
+               placeholder="https://youtube.com/@itsdecodingai" spellcheck="false">
+      </label>
+      <p class="hint">{{ youtubeHint() }}</p>
+    </div>
+  }
+
+  <button type="button" class="btn" [disabled]="form.previewing()" (click)="preview()">
+    {{ form.previewing() ? 'Checking…' : 'Preview source' }}
+  </button>
+
+  @if (form.previewError()) {
+    <div class="preview">
+      <ul class="warn-list"><li>{{ form.previewError() }}</li></ul>
+    </div>
+  } @else if (form.preview(); as preview) {
+    <div class="preview">
+      <h3>{{ preview.title }}</h3>
+      <p class="meta">{{ preview.count }} recording(s) &middot; {{ preview.source_line }}</p>
+      <ol>
+        @for (item of preview.items; track item.video_id) {
+          <li>
+            {{ item.title }}
+            @if (item.duration_sec) { <span class="dur">{{ fmtDuration(item.duration_sec) }}</span> }
+          </li>
+        }
+      </ol>
+      @if (preview.warnings.length) {
+        <ul class="warn-list">
+          @for (warning of preview.warnings; track warning) { <li>{{ warning }}</li> }
+        </ul>
+      }
+    </div>
+  }
+</section>

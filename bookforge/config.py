@@ -137,6 +137,10 @@ class Settings(BaseSettings):
     media_prefetch_concurrency: int = 3
     chapter_concurrency: int = 1
     num_threads: int = 4
+    #: Transcript windows analysed concurrently. Each window is an independent
+    #: LLM call (map step, before the merge), so a long talk with many windows
+    #: no longer pays for them one round-trip at a time.
+    analyst_concurrency: int = 4
 
     # --- Optimization ------------------------------------------------------
     optimizer: OptimizerName = "gepa"

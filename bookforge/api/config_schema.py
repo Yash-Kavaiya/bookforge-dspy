@@ -153,6 +153,10 @@ FIELD_SCHEMA: list[dict] = [
         "key": "num_threads", "group": "concurrency", "type": "number",
         "label": "DSPy worker threads", "min": 1, "max": 32, "step": 1,
     },
+    {
+        "key": "analyst_concurrency", "group": "concurrency", "type": "number",
+        "label": "Transcript windows analysed in parallel", "min": 1, "max": 16, "step": 1,
+    },
     # --- optimization ------------------------------------------------------
     {
         "key": "optimizer", "group": "optimization", "type": "select",

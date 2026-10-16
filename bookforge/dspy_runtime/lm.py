@@ -14,6 +14,7 @@ than a class hierarchy.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -65,10 +66,12 @@ class UsageTracker:
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         failed: bool = False,
+        count_call: bool = True,
     ) -> None:
         with self._lock:
             entry = self.by_role.setdefault(role, UsageRecord())
-            entry.calls += 1
+            if count_call:
+                entry.calls += 1
             entry.prompt_tokens += prompt_tokens
             entry.completion_tokens += completion_tokens
             if failed:
@@ -183,6 +186,70 @@ def _read_usage(outputs: dict[str, Any] | None) -> tuple[int, int]:
 # ---------------------------------------------------------------------------
 
 
+_REASONING_FAMILY_RE = re.compile(r"^(?:o\d+(?:-.*)?|gpt-(?:[5-9]|\d{2,})(?:[.\-].*)?)$")
+
+#: Reasoning tokens are billed against the completion budget, so a chapter that
+#: fits in 16k tokens of prose can still be cut off once the model has thought.
+_REASONING_MIN_COMPLETION_TOKENS = 32_000
+
+
+def is_reasoning_model(model: str) -> bool:
+    """OpenAI reasoning models: o-series and gpt-5 onward, excluding chat aliases.
+
+    They reject ``max_tokens`` (``max_completion_tokens`` only) and any
+    temperature other than the default. DSPy's own check stops at gpt-5, so
+    gpt-6 would otherwise be sent both and every call would 400.
+    """
+    family = model.split("/")[-1].lower()
+    return "-chat" not in family and _REASONING_FAMILY_RE.match(family) is not None
+
+
+class BookForgeLM(dspy.LM):
+    """``dspy.LM`` with two BookForge concerns attached.
+
+    * It never sends a temperature to a reasoning model. Per-call and
+      ``copy()`` overrides (the resample paths use ``temperature=0.7`` to
+      escape the cache) would otherwise reach the provider and be rejected.
+      ``rollout_id`` still separates cache entries.
+    * It records token usage from the raw provider response. DSPy's
+      ``on_lm_end`` callback only receives the completion text, so usage read
+      there was always zero.
+    """
+
+    #: Usage role; set by ``build_lm``. Not an LM kwarg, so never sent upstream.
+    bookforge_role: str = ""
+
+    def _sanitize(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        if is_reasoning_model(self.model):
+            kwargs = {**kwargs, "temperature": None}
+        return kwargs
+
+    def _record_usage(self, results: Any) -> Any:
+        if self.bookforge_role:
+            prompt_tokens, completion_tokens = _read_usage({"usage": _response_usage(results)})
+            if prompt_tokens or completion_tokens:
+                USAGE.record(
+                    self.bookforge_role, prompt_tokens, completion_tokens, count_call=False
+                )
+        return results
+
+    def forward(self, prompt=None, messages=None, **kwargs):
+        return self._record_usage(
+            super().forward(prompt=prompt, messages=messages, **self._sanitize(kwargs))
+        )
+
+    async def aforward(self, prompt=None, messages=None, **kwargs):
+        return self._record_usage(
+            await super().aforward(prompt=prompt, messages=messages, **self._sanitize(kwargs))
+        )
+
+
+def _response_usage(results: Any) -> Any:
+    if isinstance(results, dict):
+        return results.get("usage") or {}
+    return getattr(results, "usage", None) or {}
+
+
 def _provider_kwargs(settings: Settings, model: str) -> dict[str, Any]:
     """Credentials and endpoint for a LiteLLM model id.
 
@@ -237,8 +304,27 @@ def build_lm(role: Role, settings: Settings | None = None, **overrides: Any) -> 
     }
     kwargs.update(_provider_kwargs(settings, model))
     kwargs.update(overrides)
-    logger.debug("LM[%s] model=%s temperature=%s", role, model, temperature)
-    return dspy.LM(model, **kwargs)
+    if is_reasoning_model(model):
+        budget = max(kwargs.get("max_tokens") or 0, _REASONING_MIN_COMPLETION_TOKENS)
+        kwargs["temperature"] = None
+        if _dspy_knows_reasoning_model(model):
+            # DSPy renames max_tokens itself and rejects anything else.
+            kwargs["max_tokens"] = budget
+        else:
+            kwargs["max_tokens"] = None
+            kwargs["max_completion_tokens"] = budget
+    logger.debug("LM[%s] model=%s temperature=%s", role, model, kwargs["temperature"])
+    lm = BookForgeLM(model, **kwargs)
+    lm.bookforge_role = role
+    return lm
+
+
+def _dspy_knows_reasoning_model(model: str) -> bool:
+    try:
+        from dspy.clients.lm import _is_openai_reasoning_model
+    except ImportError:
+        return False
+    return _is_openai_reasoning_model(model)
 
 
 class LMRouter:

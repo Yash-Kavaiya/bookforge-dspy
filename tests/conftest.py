@@ -37,6 +37,14 @@ def settings(tmp_path) -> Settings:
         artifacts_dir=tmp_path / "artifacts",
         compile_latex=False,
         openai_api_key="test-key-not-used",
+        # Pinned so a developer's .env (e.g. a reasoning model, or no gateway
+        # URL) cannot change what the LM-construction tests observe.
+        openai_api_base="http://127.0.0.1:9/v1",
+        analyst_model="openai/test-model",
+        writer_model="openai/test-model",
+        critic_model="openai/test-model",
+        caption_model="openai/test-model",
+        reflection_model="openai/test-model",
         qa_max_iterations=3,
         load_optimized=False,
     )

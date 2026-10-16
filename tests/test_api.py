@@ -387,7 +387,7 @@ class TestUI:
         assert "bookforge" in response.text
 
     def test_path_traversal_cannot_escape_the_webapp_dir(self, webapp_client, tmp_path):
-        client, webapp = webapp_client
+        client, _webapp = webapp_client
         (tmp_path / "secret.txt").write_text("do not serve me", encoding="utf-8")
         response = client.get("/..%2Fsecret.txt")
         assert "do not serve me" not in response.text

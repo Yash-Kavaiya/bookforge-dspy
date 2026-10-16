@@ -1,0 +1,25 @@
+@if (job(); as j) {
+  @if (j.status === 'succeeded' && j.result) {
+    <div class="result">
+      <h3>{{ j.result.title || 'Book ready' }}</h3>
+      <div class="stats">
+        <div class="stat"><b>{{ j.result.chapters_included }}</b>chapters</div>
+        <div class="stat"><b>{{ j.result.verified_chapters }}</b>verified</div>
+        <div class="stat"><b>{{ (j.result.mean_quality_score ?? 0).toFixed(2) }}</b>mean quality</div>
+        <div class="stat"><b>{{ j.result.overfull_boxes ?? 0 }}</b>overfull boxes</div>
+      </div>
+      <div class="actions">
+        @if (j.result.pdf) {
+          <a class="btn primary" [href]="bookUrl(j.channel_slug)" target="_blank" rel="noopener">Open the PDF</a>
+          <a class="btn secondary" [href]="bookUrl(j.channel_slug, false)" download>Download</a>
+        }
+        <a class="btn secondary" [href]="fileUrl(j.channel_slug, 'main.tex')" target="_blank" rel="noopener">main.tex</a>
+      </div>
+    </div>
+  } @else if (j.error) {
+    <div class="result error">
+      <h3>Build {{ j.status }}</h3>
+      <p>{{ j.error }}</p>
+    </div>
+  }
+}

@@ -31,6 +31,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -151,6 +152,10 @@ def create_app(settings=None, env_path: Path | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # The Angular bundle and JSON API responses (event/chapter lists can run to
+    # hundreds of KB on a long build) compress well; this cuts UI load time and
+    # polling payload size for free.
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     upload_root = settings.workspace_root_abs / UPLOAD_SUBDIR
     upload_root.mkdir(parents=True, exist_ok=True)
@@ -644,8 +649,20 @@ def create_app(settings=None, env_path: Path | None = None) -> FastAPI:
         if full_path:
             candidate = (WEBAPP_DIR / full_path).resolve()
             if candidate.is_relative_to(WEBAPP_DIR.resolve()) and candidate.is_file():
-                return FileResponse(candidate)
-        return HTMLResponse(index.read_text(encoding="utf-8"))
+                # Angular's production build content-hashes its JS/CSS
+                # filenames, so any file that isn't index.html itself can be
+                # cached indefinitely — a rebuild changes the filename, not
+                # the content behind an old one.
+                return FileResponse(
+                    candidate,
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"},
+                )
+        # index.html references the current build's hashed filenames, so it
+        # must always be revalidated rather than cached.
+        return HTMLResponse(
+            index.read_text(encoding="utf-8"),
+            headers={"Cache-Control": "no-cache"},
+        )
 
     @app.exception_handler(ValueError)
     def value_error_handler(request, exc: ValueError):

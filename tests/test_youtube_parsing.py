@@ -140,6 +140,7 @@ class FakeYDL:
 
     requested: list[str] = []
     payload: dict | None = None
+    raise_exc: Exception | None = None
 
     def __init__(self, options):
         self.options = options
@@ -152,6 +153,8 @@ class FakeYDL:
 
     def extract_info(self, url, download=False):
         FakeYDL.requested.append(url)
+        if FakeYDL.raise_exc is not None:
+            raise FakeYDL.raise_exc
         return FakeYDL.payload
 
 
@@ -160,6 +163,7 @@ class TestChannelListing:
     def _patch(self, monkeypatch):
         FakeYDL.requested = []
         FakeYDL.payload = None
+        FakeYDL.raise_exc = None
         monkeypatch.setattr("bookforge.tools.youtube.YoutubeDL", FakeYDL)
 
     def _entries(self, count: int, duration: int = 600) -> dict:
@@ -220,3 +224,20 @@ class TestChannelListing:
         FakeYDL.payload = self._entries(1)
         title, _ = yt.list_channel_videos("https://www.youtube.com/@abc")
         assert title == "Test Channel"
+
+    def test_cookie_load_failure_names_the_real_cause(self):
+        """A locked browser cookie DB must not be masked as 'check the URL'.
+
+        Regression: this used to be swallowed by the per-candidate
+        ``except Exception`` and replaced with the generic "Could not read"
+        message, which sent people looking for a URL/playlist problem that
+        did not exist.
+        """
+        from yt_dlp.cookies import CookieLoadError
+
+        FakeYDL.raise_exc = CookieLoadError("failed to load cookies")
+        with pytest.raises(RuntimeError, match="Could not read cookies") as exc_info:
+            yt.list_channel_videos("https://www.youtube.com/@abc")
+        assert "Check the URL is a public channel" not in str(exc_info.value)
+        # No point retrying the second candidate URL — it fails identically.
+        assert len(FakeYDL.requested) == 1

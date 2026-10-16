@@ -203,10 +203,17 @@ class TestIndex:
     @needs_makeindex
     @needs_pdftotext
     def test_indexed_terms_reach_the_printed_index(self, tmp_path):
+        # latex.py's _MIN_INDEX_ENTRIES (8) drops a thinner index outright
+        # rather than print a near-empty page, so this needs enough distinct
+        # \term{} calls to clear that bar and actually exercise makeindex.
+        terms = [
+            "harness", "stopping rule", "refiner", "verifier",
+            "grounding score", "chunk analysis", "manifest", "chapter loop",
+        ]
         body = (
             CHAPTER
-            + r"The \term{harness} is the code around the model. "
-            + r"A \term{stopping rule} says when the loop is done. "
+            + " ".join(rf"The \term{{{term}}} matters here." for term in terms)
+            + " "
             + ("Body text that runs on. " * 200)
             # chapter_wrapper omits the back matter that assemble_main_tex adds.
             + "\n\\clearpage\n\\printindex\n"

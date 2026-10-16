@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 
 import dspy
 
@@ -84,20 +85,67 @@ class TranscriptAnalyst(dspy.Module):
         chunk: TranscriptChunk,
         visual_insights: str = "",
     ) -> ChunkAnalysis | None:
-        try:
-            prediction = self.analyze_chunk(
-                video_title=video_title,
-                chunk_index=chunk.index,
-                chunk_total=chunk.total,
-                transcript_chunk=_prompt_transcript(chunk.text, visual_insights),
-            )
-            return prediction.analysis
-        except Exception as exc:
-            # One unreadable window must not cost us the other 11.
-            logger.warning(
-                "analysis failed for window %d/%d: %s", chunk.index, chunk.total, exc
-            )
-            return None
+        attempts = 2
+        for attempt in range(1, attempts + 1):
+            # A retry with identical inputs would be served the same bad reply
+            # from DSPy's cache; a fresh rollout_id at temperature > 0 forces a
+            # new sample.
+            config = {} if attempt == 1 else {"rollout_id": attempt, "temperature": 0.7}
+            try:
+                prediction = self.analyze_chunk(
+                    video_title=video_title,
+                    chunk_index=chunk.index,
+                    chunk_total=chunk.total,
+                    transcript_chunk=_prompt_transcript(chunk.text, visual_insights),
+                    config=config,
+                )
+                return prediction.analysis
+            except Exception as exc:
+                # One unreadable window must not cost us the other 11.
+                logger.warning(
+                    "analysis failed for window %d/%d (attempt %d/%d): %s",
+                    chunk.index, chunk.total, attempt, attempts, exc,
+                )
+        return None
+
+    def _analyze_chunks_concurrently(
+        self,
+        video_title: str,
+        chunks: list[TranscriptChunk],
+        visual_insights: str,
+    ) -> list[ChunkAnalysis | None]:
+        """Run the map step over every window at once, bounded by a pool.
+
+        Each window is an independent LLM call, so running them one at a time
+        makes the analyst pay for N round-trips in series when the provider
+        would happily take them concurrently. Order is preserved (indexed, not
+        completion order) so the merge step sees windows in the same sequence
+        it always did; failures still return ``None`` in place, exactly as the
+        sequential loop did.
+        """
+        workers = max(1, min(self.settings.analyst_concurrency, len(chunks)))
+        if workers == 1:
+            return [
+                self._analyze_one_chunk(
+                    video_title, chunk,
+                    visual_insights=visual_insights if chunk.index == 1 else "",
+                )
+                for chunk in chunks
+            ]
+
+        with ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="bf-analyst"
+        ) as pool:
+            futures = [
+                pool.submit(
+                    self._analyze_one_chunk,
+                    video_title,
+                    chunk,
+                    visual_insights=visual_insights if chunk.index == 1 else "",
+                )
+                for chunk in chunks
+            ]
+            return [future.result() for future in futures]
 
     def _merge_chunks(
         self, video_title: str, analyses: list[ChunkAnalysis]
@@ -148,18 +196,8 @@ class TranscriptAnalyst(dspy.Module):
         logger.info(
             "analysing '%s' across %d transcript windows", video_title, len(chunks)
         )
-        chunk_analyses: list[ChunkAnalysis] = []
-        for chunk in chunks:
-            # Attach the visual briefing only to the first window so later
-            # windows stay focused on spoken coverage.
-            briefing = visual_insights if chunk.index == 1 else ""
-            result = self._analyze_one_chunk(
-                video_title,
-                chunk,
-                visual_insights=briefing,
-            )
-            if result is not None:
-                chunk_analyses.append(result)
+        results = self._analyze_chunks_concurrently(video_title, chunks, visual_insights)
+        chunk_analyses = [result for result in results if result is not None]
 
         if not chunk_analyses:
             raise RuntimeError(

@@ -1,0 +1,43 @@
+<section class="panel wide" id="panel-progress">
+  <div class="panel-head">
+    <h2>3&nbsp;&nbsp;Progress</h2>
+    <div class="panel-actions">
+      <span class="concurrency-note">{{ concurrencyNote() }}</span>
+      <span class="status-pill" [class]="stream.status()">{{ stream.status() }}</span>
+      @if (stream.status() === 'running') {
+        <button type="button" class="btn secondary small" (click)="cancel()">Cancel</button>
+      }
+    </div>
+  </div>
+
+  @if (stream.nowRunning(); as running) {
+    <div class="now-running">
+      <span class="dot"></span>
+      @if (running.chapter) {
+        <span class="chapter-badge">CH {{ running.chapter.index }}/{{ running.chapter.total }}</span>
+        <span class="title">{{ running.chapter.title }}</span>
+      } @else {
+        <span class="title">{{ running.phase }}</span>
+      }
+      @if (running.chapter && running.phase) {
+        <span class="phase">{{ running.phase }}</span>
+      }
+    </div>
+  }
+
+  <app-usage-panel [usage]="stream.usage()" />
+
+  @if (stream.chapters().length) {
+    <div class="chapters">
+      @for (chapter of stream.chapters(); track chapter.video_id) {
+        <app-chapter-card [chapter]="chapter" (select)="onChapterSelect($event)" />
+      }
+    </div>
+  }
+
+  <app-log-panel [events]="stream.events()" />
+
+  <app-result-panel [job]="stream.finishedJob()" />
+</section>
+
+<app-verdict-dialog />

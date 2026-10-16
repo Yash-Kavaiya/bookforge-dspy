@@ -11,6 +11,7 @@ is rejected and retried instead of being quietly typeset into the book.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from typing import Literal
 
@@ -20,6 +21,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Manifest (manifest.json)
@@ -223,18 +226,73 @@ class DiagramSpec(BaseModel):
 
     @model_validator(mode="after")
     def _edges_reference_known_nodes(self) -> DiagramSpec:
-        """An edge naming a node that does not exist renders as a dangling arrow."""
-        known = {e.strip().lower() for e in self.elements}
+        """An edge naming a node that does not exist renders as a dangling arrow.
+
+        Models routinely annotate a node ("Define Goal (e.g. run tests)") and
+        then name it bare in an edge ("Define Goal -> ..."). That is the same
+        node, so the edge is rewritten to the element's exact text. An endpoint
+        that matches no element, or more than one, is still an error.
+        """
+        rewritten = []
         for edge in self.relationships:
-            head = edge.split(":", 1)[0]
-            parts = [p.strip().lower() for p in head.split("->")]
-            unknown = [p for p in parts if p and p not in known]
+            head, sep, label = edge.partition(":")
+            resolved = []
+            unknown = []
+            for part in head.split("->"):
+                name = part.strip()
+                if not name:
+                    continue
+                match = _resolve_node(name, self.elements)
+                if match is None:
+                    unknown.append(name.lower())
+                resolved.append(match or name)
             if unknown:
                 raise ValueError(
                     f"diagram '{self.title}': edge {edge!r} references unknown "
                     f"node(s) {unknown}; elements are {self.elements}"
                 )
+            rewritten.append(" -> ".join(resolved) + (f" :{label}" if sep else ""))
+        self.relationships = rewritten
         return self
+
+
+def _bare_node(name: str) -> str:
+    """A node name without its trailing parenthetical, lower-cased."""
+    return re.sub(r"\s*\([^)]*\)\s*$", "", name).strip().lower()
+
+
+def _resolve_node(name: str, elements: list[str]) -> str | None:
+    lowered = name.strip().lower()
+    for element in elements:
+        if element.strip().lower() == lowered:
+            return element
+    bare = _bare_node(name)
+    matches = [e for e in elements if _bare_node(e) == bare]
+    if len(matches) == 1:
+        return matches[0]
+    matches = [
+        e for e in elements
+        if re.match(rf"{re.escape(bare)}\b", e.strip().lower())
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def trim_lists(data: object, caps: dict[str, int], model: str) -> object:
+    """Drop items past a list's cap instead of rejecting the whole object.
+
+    An analysis with 16 glossary terms where 12 are allowed is not malformed —
+    every item is individually valid, the model was just generous. Rejecting it
+    discarded a whole transcript window (minutes of LLM time) over surplus.
+    Items are kept in the order the model ranked them.
+    """
+    if not isinstance(data, dict):
+        return data
+    for key, cap in caps.items():
+        value = data.get(key)
+        if isinstance(value, list) and len(value) > cap:
+            logger.info("%s.%s: keeping %d of %d items", model, key, cap, len(value))
+            data[key] = value[:cap]
+    return data
 
 
 class Exercise(BaseModel):
@@ -304,6 +362,16 @@ class ChapterAnalysis(BaseModel):
     glossary: list[GlossaryItem] = Field(default_factory=list, max_length=30)
     exercises: list[Exercise] = Field(default_factory=list, max_length=10)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _trim_surplus(cls, data: object) -> object:
+        return trim_lists(
+            data,
+            {"learning_objectives": 8, "concepts": 12, "tables": 6, "charts": 6,
+             "diagrams": 4, "derivations": 8, "glossary": 30, "exercises": 10},
+            "ChapterAnalysis",
+        )
+
     @property
     def glossary_dict(self) -> dict[str, str]:
         return {item.term: item.definition for item in self.glossary}
@@ -319,6 +387,12 @@ class ChapterAnalysis(BaseModel):
         Returned in normalized form so ``940.0`` (a float chart value) and
         ``940`` (the same number in prose) compare as one claim.
         """
+        return [
+            normalize_number(n) for blob in self.number_sources() for n in extract_numbers(blob)
+        ]
+
+    def number_sources(self) -> list[str]:
+        """The text fields ``all_numbers`` reads, for callers that parse differently."""
         blobs: list[str] = [self.summary, self.chapter_title]
         blobs += self.learning_objectives
         for concept in self.concepts:
@@ -342,9 +416,7 @@ class ChapterAnalysis(BaseModel):
             blobs.extend(derivation.assumptions)
         for item in self.glossary:
             blobs.append(item.definition)
-        return [
-            normalize_number(n) for blob in blobs for n in extract_numbers(blob)
-        ]
+        return blobs
 
 
 # ---------------------------------------------------------------------------

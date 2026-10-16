@@ -5,6 +5,7 @@
 
 # Pipeline output — books are regenerated, not committed
 data/
+logs/
 mlruns/
 mlartifacts/
 
@@ -18,12 +19,13 @@ artifacts/*.json
 # committed, same as any other compiled artifact.
 bookforge/api/webapp/
 
-# Python
+# Python — anchor build/ and dist/ to the repo root. A bare "build/" also
+# matches frontend/src/app/features/build/ and drops the Angular UI from git.
 __pycache__/
 *.py[cod]
 *.egg-info/
-build/
-dist/
+/build/
+/dist/
 .venv/
 venv/
 .eggs/

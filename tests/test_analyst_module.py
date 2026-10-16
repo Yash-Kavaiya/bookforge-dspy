@@ -7,6 +7,9 @@ exercised without a live model.
 
 from __future__ import annotations
 
+import threading
+import time
+
 import dspy
 import pytest
 
@@ -167,6 +170,137 @@ class TestAnalystRouting:
         result = _analyst(settings, analysis)(video_title="K8s", segments=transcript_segments)
         assert 0.0 <= result.grounding_score <= 1.0
         assert result.grounding_report is not None
+
+
+class TestConcurrentAnalysis:
+    """Windows are analyzed concurrently — each is an independent LLM call."""
+
+    def test_windows_are_analyzed_in_parallel_not_series(self, settings, analysis):
+        """N windows at ~0.2s each must take well under N * 0.2s in total."""
+        settings.transcript_chunk_chars = 3_000
+        settings.transcript_chunk_overlap_chars = 300
+        settings.analyst_concurrency = 8
+        delay = 0.2
+
+        class SlowChunk(dspy.Module):
+            def forward(self, chunk_index: int = 1, **kwargs) -> dspy.Prediction:
+                time.sleep(delay)
+                return dspy.Prediction(
+                    analysis=ChunkAnalysis(
+                        concepts=[
+                            ConceptNote(
+                                heading=f"Concept {chunk_index}",
+                                explanation="Explains what the speaker covered in this window of the talk.",
+                            )
+                        ],
+                        segment_summary=f"window {chunk_index}",
+                    )
+                )
+
+        module = TranscriptAnalyst(settings)
+        module.analyze_chunk = SlowChunk()
+        module.merge = ScriptedMerge(analysis)
+        module.single_shot = ScriptedSingle(analysis)
+
+        started = time.monotonic()
+        result = module(video_title="K8s", segments=_long_segments())
+        elapsed = time.monotonic() - started
+
+        assert result.windows >= 4
+        # Sequential would take windows * delay; concurrent must beat that
+        # comfortably even accounting for scheduling overhead.
+        assert elapsed < (result.windows * delay) * 0.7
+
+    def test_concurrent_windows_still_reach_merge_in_order(self, settings, analysis):
+        """Completion order may vary; the merge must still see windows 1..N in order."""
+        settings.transcript_chunk_chars = 3_000
+        settings.transcript_chunk_overlap_chars = 300
+        settings.analyst_concurrency = 8
+
+        class OutOfOrderChunk(dspy.Module):
+            def forward(self, chunk_index: int = 1, chunk_total: int = 1, **kwargs) -> dspy.Prediction:
+                # Later windows finish first, so submission order and
+                # completion order disagree.
+                time.sleep(0.01 * (chunk_total - chunk_index))
+                return dspy.Prediction(
+                    analysis=ChunkAnalysis(
+                        concepts=[
+                            ConceptNote(
+                                heading=f"Concept {chunk_index}",
+                                explanation="Explains what the speaker covered in this window of the talk.",
+                            )
+                        ],
+                        segment_summary=f"window {chunk_index}",
+                    )
+                )
+
+        module = TranscriptAnalyst(settings)
+        module.analyze_chunk = OutOfOrderChunk()
+        module.merge = ScriptedMerge(analysis)
+        module.single_shot = ScriptedSingle(analysis)
+
+        module(video_title="K8s", segments=_long_segments())
+        received_order = [a.segment_summary for a in module.merge.received]
+        expected_order = [f"window {i}" for i in range(1, len(received_order) + 1)]
+        assert received_order == expected_order
+
+    def test_one_slow_failure_does_not_block_or_lose_the_rest(self, settings, analysis):
+        settings.transcript_chunk_chars = 3_000
+        settings.transcript_chunk_overlap_chars = 300
+        settings.analyst_concurrency = 8
+        lock = threading.Lock()
+        seen: list[int] = []
+
+        class FlakyChunk(dspy.Module):
+            def forward(self, chunk_index: int = 1, **kwargs) -> dspy.Prediction:
+                with lock:
+                    seen.append(chunk_index)
+                if chunk_index == 2:
+                    raise RuntimeError("simulated window failure")
+                return dspy.Prediction(
+                    analysis=ChunkAnalysis(
+                        concepts=[ConceptNote(heading=f"Concept {chunk_index}", explanation="x" * 40)],
+                        segment_summary=f"window {chunk_index}",
+                    )
+                )
+
+        module = TranscriptAnalyst(settings)
+        module.analyze_chunk = FlakyChunk()
+        module.merge = ScriptedMerge(analysis)
+        module.single_shot = ScriptedSingle(analysis)
+
+        result = module(video_title="K8s", segments=_long_segments())
+        assert len(set(seen)) == result.windows
+        assert seen.count(2) == 2, "a failed window is retried once"
+        assert len(module.merge.received) == result.windows - 1
+
+    def test_a_window_that_fails_once_is_recovered_by_retry(self, settings, analysis):
+        """An unparseable reply is resampled rather than losing the window."""
+        settings.transcript_chunk_chars = 3_000
+        settings.transcript_chunk_overlap_chars = 300
+        configs: list[dict] = []
+
+        class FailsFirstTime(dspy.Module):
+            def forward(self, chunk_index: int = 1, config=None, **kwargs) -> dspy.Prediction:
+                if chunk_index == 2:
+                    configs.append(dict(config or {}))
+                    if len(configs) == 1:
+                        raise RuntimeError("LM response cannot be serialized to a JSON object")
+                return dspy.Prediction(
+                    analysis=ChunkAnalysis(
+                        concepts=[ConceptNote(heading=f"Concept {chunk_index}", explanation="x" * 40)],
+                        segment_summary=f"window {chunk_index}",
+                    )
+                )
+
+        module = TranscriptAnalyst(settings)
+        module.analyze_chunk = FailsFirstTime()
+        module.merge = ScriptedMerge(analysis)
+        module.single_shot = ScriptedSingle(analysis)
+
+        result = module(video_title="K8s", segments=_long_segments())
+        assert len(module.merge.received) == result.windows
+        assert configs[1].get("rollout_id"), "retry must bypass the DSPy cache"
 
 
 class TestWriter:

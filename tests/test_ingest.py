@@ -289,9 +289,31 @@ class TestYouTubeAuth:
     def test_missing_cookies_file_is_ignored_not_fatal(self, tmp_path):
         assert auth_options(cookies_file=tmp_path / "absent.txt") == {}
 
-    def test_browser_and_proxy(self):
+    def test_browser_and_proxy(self, monkeypatch):
+        from bookforge.tools import youtube
+
+        monkeypatch.setattr(youtube, "browser_cookies_readable", lambda browser: True)
         options = auth_options(cookies_from_browser="firefox", proxy="http://p:1")
         assert options["cookiesfrombrowser"] == ("firefox",)
+        assert options["proxy"] == "http://p:1"
+
+    def test_unreadable_browser_cookies_are_dropped_not_fatal(self, monkeypatch):
+        """Seen on Windows: Chrome's cookie store could not be decrypted, and
+        every playlist failed even though it downloads fine without cookies."""
+        from yt_dlp.cookies import CookieLoadError
+
+        from bookforge.tools import youtube
+
+        def locked(browser):
+            raise CookieLoadError("failed to load cookies")
+
+        monkeypatch.setattr(youtube, "extract_cookies_from_browser", locked)
+        youtube.browser_cookies_readable.cache_clear()
+        try:
+            options = auth_options(cookies_from_browser="chrome", proxy="http://p:1")
+        finally:
+            youtube.browser_cookies_readable.cache_clear()
+        assert "cookiesfrombrowser" not in options
         assert options["proxy"] == "http://p:1"
 
     def test_no_auth_configured(self):

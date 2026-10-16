@@ -1,0 +1,12 @@
+<div class="log" role="log" aria-live="polite" #log>
+  @if (!events().length) {
+    <div class="row empty"><span class="k"></span><span class="m">Waiting for a build.</span></div>
+  }
+  @for (event of events(); track event.seq) {
+    <div class="row" [class]="event.kind">
+      <span class="k">{{ fmtClock(event.at) }}</span>
+      <span class="icon">{{ iconFor(event.kind) }}</span>
+      <span class="m">{{ event.message }}</span>
+    </div>
+  }
+</div>

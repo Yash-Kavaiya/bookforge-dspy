@@ -48,7 +48,7 @@ class TestAnalysisScoring:
         assert "do not appear in the transcript" not in feedback
 
     def test_flawless_analysis_gets_reinforcing_feedback(self, analysis, transcript_text):
-        from bookforge.schemas import ConceptNote
+        from bookforge.schemas import ConceptNote, GlossaryItem
 
         analysis.concepts.append(
             ConceptNote(
@@ -64,6 +64,14 @@ class TestAnalysisScoring:
             )
         )
         analysis.exercises = analysis.exercises * 5
+        # score_analysis's "flawless" message requires every dimension to
+        # clear its bar, including >= 4 glossary terms — not just concepts
+        # and exercises.
+        analysis.glossary += [
+            GlossaryItem(term="CoreDNS", definition="The cluster's internal DNS server."),
+            GlossaryItem(term="Service discovery", definition="Finding a pod by service name."),
+            GlossaryItem(term="Control plane", definition="The components that manage cluster state."),
+        ]
         _, feedback = score_analysis(analysis, transcript_text)
         assert "Grounded" in feedback
 

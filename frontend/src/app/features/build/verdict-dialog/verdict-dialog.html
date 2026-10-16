@@ -1,0 +1,50 @@
+<dialog class="dialog" #dialog>
+  @if (chapter(); as c) {
+    <div class="dialog-head">
+      <h3>Chapter {{ c.chapter_number }}: {{ c.title }}</h3>
+      <button type="button" class="icon-btn" aria-label="Close" (click)="close()">✕</button>
+    </div>
+    <div class="dialog-body">
+      <dl class="kv">
+        <dt>Status</dt><dd>{{ c.status }}</dd>
+        <dt>Quality</dt><dd>{{ (c.qa_score ?? 0).toFixed(3) }}</dd>
+        <dt>Grounding</dt><dd>{{ (c.grounding_score ?? 0).toFixed(3) }}</dd>
+        <dt>Compiles</dt><dd>{{ c.compiled ? 'yes' : 'no' }}</dd>
+        <dt>Iterations</dt><dd>{{ c.iterations ?? 0 }}</dd>
+        <dt>Source</dt><dd>{{ c.source || '' }}</dd>
+      </dl>
+
+      @if (c.error) {
+        <h4>Error</h4>
+        <p>{{ c.error }}</p>
+      }
+
+      @if (c.verdict?.defects?.length) {
+        <h4>Defects ({{ sortedDefects().length }})</h4>
+        @for (d of sortedDefects(); track $index) {
+          <div class="defect" [class]="d.severity">
+            <div class="sev">{{ d.severity }}</div>
+            <div>{{ d.message }}</div>
+            @if (d.fix) { <div class="fix">Fix: {{ d.fix }}</div> }
+          </div>
+        }
+      } @else if (c.verdict) {
+        <h4>Defects</h4>
+        <p class="empty-state">None — the chapter passed every check.</p>
+      }
+
+      @if (c.verdict?.history?.length) {
+        <h4>Refinement history</h4>
+        <ul class="history">
+          @for (entry of c.verdict!.history; track entry.iteration) {
+            <li>
+              <span class="sc">{{ entry.score.toFixed(2) }}</span>
+              <span>{{ entry.compiles ? 'compiles' : 'does not compile' }}, {{ entry.total_defects }} defect(s)</span>
+              <span class="note">{{ entry.note || '' }}</span>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  }
+</dialog>

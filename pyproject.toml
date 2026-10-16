@@ -97,10 +97,18 @@ ignore = [
     "E501",    # line length is handled by the formatter
     "B008",    # function calls in argument defaults (pydantic Field)
     "RUF012",  # mutable class attrs without ClassVar (pydantic models)
+    # Prompts, docs, and the number parser use typographic dashes and
+    # operators on purpose (including a regex that must match an en dash).
+    "RUF001",
+    "RUF002",
+    "RUF003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011", "SIM117"]
+# numpy must be resolved before the imports below, or dspy's lazy proxy
+# crashes imagehash. The imports cannot move above that guard.
+"bookforge/pipeline/__init__.py" = ["E402"]
 # The unicode->TeX table maps ambiguous characters on purpose; that is its job.
 "bookforge/tools/latex.py" = ["RUF001", "RUF003"]
 

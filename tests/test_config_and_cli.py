@@ -50,7 +50,8 @@ class TestSettings:
             "GOOGLE_GENAI_USE_VERTEXAI",
         ):
             monkeypatch.delenv(variable, raising=False)
-        assert not Settings(workspace_root=tmp_path).has_llm_credentials()
+        # A developer's .env must not count as "the process has no credentials".
+        assert not Settings(workspace_root=tmp_path, _env_file=None).has_llm_credentials()
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         assert Settings(workspace_root=tmp_path).has_llm_credentials()
@@ -70,7 +71,7 @@ class TestPreflight:
         ):
             monkeypatch.delenv(variable, raising=False)
         with pytest.raises(RuntimeError, match="No LLM credentials"):
-            preflight(Settings(workspace_root=tmp_path))
+            preflight(Settings(workspace_root=tmp_path, _env_file=None))
 
     def test_returns_warnings_without_mutating_settings(self, settings, monkeypatch):
         """The old preflight silently flipped compile_latex as a side effect."""

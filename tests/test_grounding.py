@@ -171,3 +171,56 @@ class TestChapterGrounding:
         report = check_chapter_grounding(tex, analysis)
         for fragment in ("27", "13", "25", "40"):
             assert fragment not in report.ungrounded
+
+    def test_worked_exercise_answer_may_be_quoted(self, analysis, assets_manifest):
+        """Seen in a real build: the writer typeset the analyst's own storage
+        estimate, with LaTeX thousands separators, and every factor was
+        flagged as invented."""
+        from bookforge.schemas import Exercise
+        from tests.conftest import good_chapter_tex
+
+        analysis.exercises = [
+            Exercise(
+                question="Estimate storage for 44,000 embeddings of 768 dimensions.",
+                answer="44,000 x 768 x 4 bytes = 135,168,000 bytes, about 129 MB. "
+                       "Target p95 < 200ms and recall@10.",
+            )
+        ]
+        tex = good_chapter_tex(assets_manifest) + (
+            "\n$44{,}000 \\times 768 \\times 4 = 135{,}168{,}000$ bytes "
+            "$\\approx 129$ MiB, p95 $<$ 200 ms, recall@10.\n"
+        )
+        report = check_chapter_grounding(tex, analysis)
+        assert report.ungrounded == []
+
+    def test_thin_space_thousands_separator_is_one_number(self, analysis, assets_manifest):
+        from tests.conftest import good_chapter_tex
+
+        tex = good_chapter_tex(assets_manifest) + "\nIt served 98\\,765 requests.\n"
+        report = check_chapter_grounding(tex, analysis)
+        assert report.ungrounded == ["98,765"]
+
+    def test_scientific_notation_base_is_not_a_claim(self, analysis, assets_manifest):
+        """Seen in a real build: the analysis wrote 0.8\\times10^9, the chapter
+        0.8\\times 10^{9}, and the lone "10" failed the chapter."""
+        from bookforge.schemas import Exercise
+        from tests.conftest import good_chapter_tex
+
+        analysis.exercises = [
+            Exercise(
+                question="Estimate storage for 0.8 billion parameters at 16 bits.",
+                answer="$(0.8\\times10^9)(16)/8=1.6\\times10^9$ bytes.",
+            )
+        ]
+        tex = good_chapter_tex(assets_manifest) + (
+            "\n$\\frac{(0.8\\times 10^{9})(16)}{8} = 1.6\\times10^{9}$ bytes.\n"
+        )
+        report = check_chapter_grounding(tex, analysis)
+        assert report.ungrounded == []
+
+    def test_number_glued_to_latex_command_is_still_checked(self, analysis, assets_manifest):
+        from tests.conftest import good_chapter_tex
+
+        tex = good_chapter_tex(assets_manifest) + "\nLatency rose $\\times37$ overnight.\n"
+        report = check_chapter_grounding(tex, analysis)
+        assert report.ungrounded == ["37"]

@@ -1,0 +1,23 @@
+@if (usage() && usage()!.total.calls) {
+  <div class="usage">
+    <div class="usage-total">
+      <b>{{ fmtTokens(totalTokens()) }}</b>
+      <span>tokens &middot; {{ usage()!.total.calls }} LLM call{{ usage()!.total.calls === 1 ? '' : 's' }} &middot;
+        <span [class.cost]="costLine().startsWith('~')">{{ costLine() }}</span>
+      </span>
+    </div>
+    <div class="usage-roles">
+      @for (chip of chips(); track chip.role) {
+        <span class="usage-chip" [title]="chip.model">
+          <span class="role">{{ chip.role }}</span>
+          <span>{{ chip.calls }} call{{ chip.calls === 1 ? '' : 's' }}</span>
+          <span>
+            {{ fmtTokens(chip.promptTokens) }} in &middot; {{ fmtTokens(chip.completionTokens) }} out
+            @if (chip.costLabel) { <span class="cost">{{ chip.costLabel }}</span> }
+          </span>
+          @if (chip.failures) { <span class="fail">{{ chip.failures }} retried</span> }
+        </span>
+      }
+    </div>
+  </div>
+}

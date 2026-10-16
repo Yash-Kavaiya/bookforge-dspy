@@ -48,8 +48,9 @@ from bookforge.schemas import (
     ChapterAnalysis,
     ChapterCandidate,
     ChapterVerdict,
+    Defect,
 )
-from bookforge.tools.latex import strip_asset_declarations
+from bookforge.tools.latex import sanitize_chapter_tex, strip_asset_declarations
 from bookforge.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -122,7 +123,22 @@ class ChapterProgram(dspy.Module):
         them, otherwise every ``\\bfFigure{...}`` fails as "never declared"
         even when the label is in the manifest — which is exactly what was
         capping every chapter at ~0.60 with compiles=False.
+
+        The emptiness check has to run on the writer/refiner's own output,
+        before the generated declaration block below is prepended — otherwise
+        an empty draft is never actually empty by the time it reaches
+        ``verify_chapter``, and scores on the boilerplate alone instead of 0.
         """
+        if not sanitize_chapter_tex(tex).strip():
+            verdict = ChapterVerdict()
+            verdict.defects.append(
+                Defect(
+                    severity="critical",
+                    message="The chapter body is empty.",
+                    fix="Emit the full LaTeX chapter body, starting with \\chapter{...}.",
+                )
+            )
+            return verdict
         body = strip_asset_declarations(tex)
         if context.manifest is not None:
             body = declaration_block(context.manifest) + "\n" + body

@@ -115,6 +115,46 @@ class TestLMRouting:
         lm = build_lm("writer", settings)
         assert "api_base" not in lm.kwargs
 
+    @pytest.mark.parametrize(
+        "model", ["openai/gpt-6-sol", "openai/gpt-5.6-sol", "openai/o3", "openai/gpt-5"]
+    )
+    def test_reasoning_models_get_default_temperature_and_completion_budget(
+        self, settings, model
+    ):
+        """gpt-6-sol 400s on max_tokens and on any temperature but 1."""
+        settings.critic_model = model
+        lm = build_lm("critic", settings)
+        assert lm.kwargs.get("temperature") is None
+        assert not lm.kwargs.get("max_tokens")
+        assert lm.kwargs["max_completion_tokens"] >= 32_000
+
+    @pytest.mark.parametrize(
+        "model", ["openai/gpt-4o", "openai/gpt-4.1-mini", "openai/gpt-5-chat-latest",
+                  "openai/nvidia/nemotron-3-ultra-550b-a55b"]
+    )
+    def test_ordinary_models_keep_role_temperature(self, settings, model):
+        from bookforge.dspy_runtime.lm import is_reasoning_model
+
+        assert not is_reasoning_model(model)
+        settings.critic_model = model
+        assert build_lm("critic", settings).kwargs["temperature"] == 0.0
+
+    def test_resample_temperature_never_reaches_a_reasoning_model(self, settings):
+        settings.writer_model = "openai/gpt-6-sol"
+        lm = build_lm("writer", settings).copy(rollout_id=1, temperature=0.7)
+        assert lm._sanitize({"temperature": 0.7})["temperature"] is None
+
+    def test_usage_is_read_from_the_provider_response(self, settings):
+        """on_lm_end only sees completion text; tokens must come from forward."""
+        from types import SimpleNamespace
+
+        USAGE.reset()
+        lm = build_lm("writer", settings)
+        lm._record_usage(SimpleNamespace(usage={"prompt_tokens": 11, "completion_tokens": 4}))
+        totals = USAGE.totals()
+        assert (totals.prompt_tokens, totals.completion_tokens, totals.calls) == (11, 4, 0)
+        USAGE.reset()
+
     def test_unknown_role_rejected(self, settings):
         with pytest.raises(ValueError, match="unknown LM role"):
             build_lm("nonsense", settings)

@@ -293,6 +293,13 @@ def check_chapter_grounding(
 
     report = GroundingReport()
     allowed = {normalize_number(n) for n in analysis.all_numbers()}
+    # Exercise answers are the analyst's own worked arithmetic (e.g. a storage
+    # estimate), handed to the writer to reproduce. They are not spoken claims,
+    # so they stay out of the transcript check, but the chapter may quote them.
+    analysis_text = analysis.number_sources() + [
+        f"{e.question} {e.answer}" for e in analysis.exercises
+    ]
+    allowed |= _lenient_numbers(" ".join(analysis_text))
     allowed |= {normalize_number(n) for n in extract_numbers(extra_allowed_text)}
     # Numbers the chapter legitimately owns: labels, widths, chapter numbers,
     # and BookForge-owned asset declarations (paths like
@@ -312,6 +319,13 @@ def check_chapter_grounding(
     structural = re.sub(r"0\.\d+\\textwidth", " ", structural)
     structural = re.sub(r"chapters/[^\s{}]+", " ", structural)
     structural = re.sub(r"frame_\d+_\d+s\.(?:jpg|png|pdf)", " ", structural, flags=re.I)
+    # LaTeX thousands separators: 44{,}000 and 44\,000 are one number, not 44
+    # and 000.
+    structural = re.sub(r"(?<=\d)(?:\{,\}|\\,)(?=\d{3})", ",", structural)
+    # The base of scientific notation (0.8\times 10^{9}) is not a claim; the
+    # mantissa and a multi-digit exponent still are.
+    structural = re.sub(r"(?<![\d.])10\s*\^", "^", structural)
+    structural = _unglue_latex_commands(structural)
 
     seen: set[str] = set()
     for number in extract_numbers(structural):
@@ -338,6 +352,25 @@ def check_chapter_grounding(
             len(chapter_words & analysis_words) / len(chapter_words), 4
         )
     return report
+
+
+def _lenient_numbers(text: str) -> set[str]:
+    """Numbers in a blob, including ones glued to a unit ("200ms", "44k").
+
+    ``extract_numbers`` skips those on purpose, but on the *allowed* side that
+    made "p95 < 200ms" in the analysis fail to license "200 ms" in the chapter.
+    """
+    spaced = re.sub(r"(?<=\d)(?=[A-Za-z])", " ", _unglue_latex_commands(str(text or "")))
+    return {normalize_number(n) for n in extract_numbers(spaced)}
+
+
+def _unglue_latex_commands(text: str) -> str:
+    r"""``\times10`` -> ``\times 10``: a control word ends before a digit.
+
+    ``extract_numbers`` skips digits glued to letters (so "p95" is not 95),
+    which also hid every number written straight after a LaTeX command.
+    """
+    return re.sub(r"(\\[A-Za-z]+)(?=\d)", r"\1 ", text)
 
 
 def numbers_in(text: str) -> set[str]:

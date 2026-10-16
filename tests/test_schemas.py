@@ -92,9 +92,49 @@ class TestDiagramSpec:
                 relationships=["Ingress -> Gateway"],
             )
 
+    def test_edge_naming_an_annotated_node_by_its_bare_name_is_resolved(self):
+        """Seen from real models: nodes carry '(e.g. ...)', edges drop it."""
+        spec = DiagramSpec(
+            title="t", caption="c",
+            elements=[
+                "Define Goal (e.g., 'run tests until all pass')",
+                "Set Success Condition (zero errors, all tests green)",
+            ],
+            relationships=["Define Goal -> Set Success Condition : then"],
+        )
+        assert spec.relationships == [
+            "Define Goal (e.g., 'run tests until all pass') -> "
+            "Set Success Condition (zero errors, all tests green) : then"
+        ]
+
+    def test_ambiguous_bare_name_is_rejected(self):
+        with pytest.raises(ValidationError, match="unknown"):
+            DiagramSpec(
+                title="t", caption="c",
+                elements=["Model (small)", "Model (large)"],
+                relationships=["Model -> Model"],
+            )
+
     def test_single_node_diagram_is_rejected(self):
         with pytest.raises(ValidationError):
             DiagramSpec(title="t", caption="c", elements=["Only"])
+
+
+class TestSurplusListItems:
+    def test_chunk_analysis_keeps_the_first_items_past_the_cap(self):
+        from bookforge.dspy_runtime.signatures import ChunkAnalysis
+
+        glossary = [{"term": f"T{i}", "definition": "d"} for i in range(20)]
+        chunk = ChunkAnalysis.model_validate({"glossary": glossary})
+        assert [g.term for g in chunk.glossary] == [f"T{i}" for i in range(12)]
+
+    def test_invalid_items_are_still_rejected(self):
+        from bookforge.dspy_runtime.signatures import ChunkAnalysis
+
+        with pytest.raises(ValidationError):
+            ChunkAnalysis.model_validate(
+                {"concepts": [{"heading": "h", "explanation": "too short"}]}
+            )
 
 
 class TestVideoRecord:
