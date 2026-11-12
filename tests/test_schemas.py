@@ -83,14 +83,29 @@ class TestDiagramSpec:
         )
         assert len(spec.relationships) == 2
 
-    def test_edge_to_unknown_node_is_rejected(self):
-        """A dangling edge renders as an arrow pointing at nothing."""
-        with pytest.raises(ValidationError, match="unknown"):
-            DiagramSpec(
-                title="t", caption="c",
-                elements=["Ingress", "Service"],
-                relationships=["Ingress -> Gateway"],
-            )
+    def test_edge_to_unknown_node_is_dropped(self):
+        """A dangling edge would render as an arrow pointing at nothing.
+
+        It is dropped, not raised: rejecting it discarded the whole analysis.
+        """
+        spec = DiagramSpec(
+            title="t", caption="c",
+            elements=["Ingress", "Service"],
+            relationships=["Ingress -> Gateway", "Ingress -> Service : routes"],
+        )
+        assert spec.relationships == ["Ingress -> Service : routes"]
+
+    def test_invented_group_node_does_not_sink_the_analysis(self):
+        """Seen from euri-chat-smart: 'All Agents' was never listed as a node."""
+        spec = DiagramSpec(
+            title="RetailForge Agent Hierarchy", caption="c", diagram_type="hierarchy",
+            elements=["Root Agent", "Billing Agent", "MongoDB Atlas"],
+            relationships=[
+                "Root Agent -> Billing Agent : delegates",
+                "All Agents -> MongoDB Atlas : data access",
+            ],
+        )
+        assert spec.relationships == ["Root Agent -> Billing Agent : delegates"]
 
     def test_edge_naming_an_annotated_node_by_its_bare_name_is_resolved(self):
         """Seen from real models: nodes carry '(e.g. ...)', edges drop it."""
@@ -107,13 +122,13 @@ class TestDiagramSpec:
             "Set Success Condition (zero errors, all tests green) : then"
         ]
 
-    def test_ambiguous_bare_name_is_rejected(self):
-        with pytest.raises(ValidationError, match="unknown"):
-            DiagramSpec(
-                title="t", caption="c",
-                elements=["Model (small)", "Model (large)"],
-                relationships=["Model -> Model"],
-            )
+    def test_ambiguous_bare_name_is_dropped(self):
+        spec = DiagramSpec(
+            title="t", caption="c",
+            elements=["Model (small)", "Model (large)"],
+            relationships=["Model -> Model"],
+        )
+        assert spec.relationships == []
 
     def test_single_node_diagram_is_rejected(self):
         with pytest.raises(ValidationError):
