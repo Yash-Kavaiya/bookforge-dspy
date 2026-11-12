@@ -230,8 +230,13 @@ class DiagramSpec(BaseModel):
 
         Models routinely annotate a node ("Define Goal (e.g. run tests)") and
         then name it bare in an edge ("Define Goal -> ..."). That is the same
-        node, so the edge is rewritten to the element's exact text. An endpoint
-        that matches no element, or more than one, is still an error.
+        node, so the edge is rewritten to the element's exact text.
+
+        An endpoint that matches no element, or more than one, drops that edge
+        rather than rejecting the analysis. Models also invent group nodes
+        ("All Agents -> Database") that were never listed; raising here threw
+        away the whole ChapterAnalysis — minutes of LLM time — over one arrow.
+        Dropping it still guarantees nothing dangles in the rendered figure.
         """
         rewritten = []
         for edge in self.relationships:
@@ -247,10 +252,11 @@ class DiagramSpec(BaseModel):
                     unknown.append(name.lower())
                 resolved.append(match or name)
             if unknown:
-                raise ValueError(
-                    f"diagram '{self.title}': edge {edge!r} references unknown "
-                    f"node(s) {unknown}; elements are {self.elements}"
+                logger.warning(
+                    "diagram %r: dropping edge %r — unknown node(s) %s; elements are %s",
+                    self.title, edge, unknown, self.elements,
                 )
+                continue
             rewritten.append(" -> ".join(resolved) + (f" :{label}" if sep else ""))
         self.relationships = rewritten
         return self
